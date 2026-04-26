@@ -36,7 +36,7 @@ En Railway → tu proyecto → **Variables**:
 | `EMAIL_FROM` | tu-gmail@gmail.com | Tu cuenta Gmail |
 | `EMAIL_PASS` | xxxx xxxx xxxx xxxx | Gmail → Seguridad → Contraseñas de app |
 | `EMAIL_1` | tu-correo@gmail.com | Tu correo para alertas |
-| `EMAIL_2` | yorguin@gmail.com | Correo de tu esposo |
+| `EMAIL_2` | xxxxx.com | Correo de tu esposo |
 
 ### Cómo crear contraseña de app Gmail
 1. Entra a myaccount.google.com
