@@ -182,7 +182,7 @@ select.fi option{background:#041428;}
 <div id="content">
 
   <!-- 1. CHAT -->
-  <div class="screen active" id="s-chat" style="padding:0;">
+  <div class="screen active" id="s-chat" style="padding:0;display:flex;">
     <div id="msgs">
       <div class="msg">
         <div class="av a">⚡</div>
@@ -210,7 +210,7 @@ Cuéntame sobre tu portafolio o usa los botones rápidos. Puedo analizar <b>cual
   </div>
 
   <!-- 2. PORTAFOLIO -->
-  <div class="screen" id="s-port">
+  <div class="screen" id="s-port" style="display:none;">
     <div id="owner-toggle">
       <button class="ot-btn active" onclick="switchOwner('ledy')">👩‍💼 Ledy</button>
       <button class="ot-btn" onclick="switchOwner('yorguin')">👨‍💼 Yorguin</button>
@@ -242,7 +242,7 @@ Cuéntame sobre tu portafolio o usa los botones rápidos. Puedo analizar <b>cual
   </div>
 
   <!-- 3. MERCADO -->
-  <div class="screen" id="s-market">
+  <div class="screen" id="s-market" style="display:none;">
     <div class="sec-t">Buscar cualquier acción</div>
     <div id="search-row">
       <input id="search-in" placeholder="Ej: Tesla, NVDA, Apple..." onkeydown="if(event.key==='Enter')doSearch()">
@@ -258,7 +258,7 @@ Cuéntame sobre tu portafolio o usa los botones rápidos. Puedo analizar <b>cual
   </div>
 
   <!-- 4. OPORTUNIDADES -->
-  <div class="screen" id="s-opp">
+  <div class="screen" id="s-opp" style="display:none;">
     <div class="sec-t">Parámetros de búsqueda</div>
     <div class="card">
       <select id="opp-h" class="fi">
@@ -278,7 +278,7 @@ Cuéntame sobre tu portafolio o usa los botones rápidos. Puedo analizar <b>cual
   </div>
 
   <!-- 5. NOTICIAS -->
-  <div class="screen" id="s-news">
+  <div class="screen" id="s-news" style="display:none;">
     <div class="sec-t">📰 Noticias financieras</div>
     <div id="fin-news"><div style="color:var(--m);font-size:13px;">Cargando...</div></div>
     <div class="sec-t" style="margin-top:8px;">🌍 Noticias mundiales</div>
@@ -323,9 +323,19 @@ setInterval(()=>{document.getElementById('time-b').textContent='🕐'+new Date()
 
 // ── NAV ───────────────────────────────────────────────────
 function showScreen(n,btn){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const screens=['chat','port','market','opp','news'];
+  screens.forEach(id=>{
+    const el=document.getElementById('s-'+id);
+    if(!el)return;
+    if(id===n){
+      el.classList.add('active');
+      el.style.display='flex';
+    }else{
+      el.classList.remove('active');
+      el.style.display='none';
+    }
+  });
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('s-'+n).classList.add('active');
   if(btn)btn.classList.add('active');
   if(n==='port')renderPortfolio();
   if(n==='market')renderMarket();
