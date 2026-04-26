@@ -6,7 +6,7 @@
 <title>APEX Financial</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#020b18;--bg2:#041428;--g:#00d4aa;--b:#0088ff;--t:#ddf0f8;--m:#4a9ebb;--dim:#2d5a6e;--card:rgba(255,255,255,.05);--bord:rgba(0,212,170,.18);--red:#ff5252;--green:#00e676;--nav-h:62px;}
+:root{--bg:#020b18;--bg2:#041428;--g:#00d4aa;--b:#0088ff;--t:#ddf0f8;--m:#4a9ebb;--dim:#2d5a6e;--card:rgba(255,255,255,.05);--bord:rgba(0,212,170,.18);--red:#ff5252;--green:#00e676;--nav-h:70px;}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 body{background:linear-gradient(160deg,var(--bg),var(--bg2) 60%,var(--bg));color:var(--t);font-family:'DM Sans',sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 /* HEADER */
@@ -27,11 +27,11 @@ body{background:linear-gradient(160deg,var(--bg),var(--bg2) 60%,var(--bg));color
 .screen::-webkit-scrollbar-thumb{background:rgba(0,212,170,.2);border-radius:2px;}
 /* BOTTOM NAV */
 #nav{height:var(--nav-h);background:rgba(0,0,0,.7);border-top:1px solid rgba(255,255,255,.07);display:flex;flex-shrink:0;backdrop-filter:blur(10px);}
-.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;color:var(--dim);cursor:pointer;transition:color .2s;padding:4px 2px;min-width:0;}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;color:var(--dim);cursor:pointer;transition:color .2s;padding:8px 2px 6px;min-width:0;}
 .nav-btn.active{color:var(--g);}
-.nav-btn .ni{font-size:22px;line-height:1;flex-shrink:0;}
-.nav-btn .nl{font-size:10px;font-weight:500;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-.nav-btn.active .ni{filter:drop-shadow(0 0 6px rgba(0,212,170,.6));}
+.nav-btn .ni{font-size:18px;line-height:1;display:block;flex-shrink:0;}
+.nav-btn .nl{font-size:10px;font-weight:600;display:block;line-height:1;margin-top:2px;white-space:nowrap;}
+.nav-btn.active .ni{filter:drop-shadow(0 0 5px rgba(0,212,170,.6));}
 /* CARDS */
 .card{background:var(--card);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:14px;margin-bottom:10px;}
 .card.green{border-color:rgba(0,212,170,.25);}
@@ -139,6 +139,24 @@ select.fi option{background:#041428;}
 #toast{position:fixed;bottom:75px;left:50%;transform:translateX(-50%);background:rgba(0,212,170,.18);border:1px solid var(--g);color:var(--g);padding:9px 18px;border-radius:20px;font-size:12px;display:none;z-index:999;white-space:nowrap;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* CHART MODAL */
+#chart-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:none;flex-direction:column;padding:14px;}
+#chart-modal.open{display:flex;}
+#chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+#chart-sym{font-family:'Playfair Display',serif;font-size:20px;color:var(--g);}
+#chart-meta{font-size:12px;color:var(--m);}
+#chart-close{background:rgba(255,255,255,.1);border:none;color:var(--t);font-size:18px;width:34px;height:34px;border-radius:50%;cursor:pointer;}
+#chart-periods{display:flex;gap:6px;margin-bottom:12px;}
+.cp{padding:6px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;color:var(--m);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;}
+.cp.active{background:rgba(0,212,170,.15);border-color:var(--g);color:var(--g);}
+#chart-canvas-wrap{flex:1;position:relative;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:12px;overflow:hidden;}
+#chart-canvas{width:100%;height:100%;}
+#chart-stats{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;}
+.cs{flex:1;min-width:80px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 10px;text-align:center;}
+.cs-l{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;}
+.cs-v{font-size:14px;font-weight:700;margin-top:2px;}
+#chart-analyze-btn{margin-top:10px;padding:12px;background:linear-gradient(135deg,var(--g),var(--b));border:none;border-radius:10px;color:white;font-size:14px;font-weight:600;cursor:pointer;width:100%;font-family:'DM Sans',sans-serif;}
 </style>
 </head>
 <body>
@@ -382,13 +400,145 @@ function renderPortfolio(){
   }).catch(()=>{});
 }
 
+function openChart(symbol, name, price, changePct){
+  currentChartSymbol = symbol;
+  currentChartName   = name;
+  document.getElementById('chart-sym').textContent = symbol + ' — ' + (name||'');
+  const pct = parseFloat(changePct||0);
+  document.getElementById('chart-meta').innerHTML =
+    '<span style="font-size:16px;font-weight:700;">$'+parseFloat(price||0).toFixed(2)+'</span> ' +
+    '<span class="'+(pct>=0?'up':'dn')+'">'+(pct>=0?'▲':'▼')+Math.abs(pct).toFixed(2)+'%</span>';
+  document.getElementById('chart-modal').classList.add('open');
+  // Reset period buttons
+  document.querySelectorAll('.cp').forEach((b,i)=>b.classList.toggle('active',i===0));
+  loadChart(symbol,'1day',30,'Último mes');
+}
+
+function closeChart(){
+  document.getElementById('chart-modal').classList.remove('open');
+}
+
+let currentChartSymbol='', currentChartName='', chartInstance=null;
+
+async function loadChart(sym, interval, outputsize, label){
+  const symbol = sym || currentChartSymbol;
+  if(!symbol) return;
+  currentChartSymbol = symbol;
+
+  // Update period buttons
+  document.querySelectorAll('.cp').forEach(b=>{
+    b.classList.toggle('active', b.textContent===
+      (outputsize<=7?'1S':outputsize<=30?'1M':outputsize<=90?'3M':'1A'));
+  });
+
+  const wrap = document.getElementById('chart-canvas-wrap');
+  wrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--m);font-size:13px;">Cargando gráfica...</div>';
+
+  try{
+    const r = await fetch('/api/chart/'+symbol+'?interval='+interval+'&outputsize='+outputsize);
+    const data = await r.json();
+    if(data.error){wrap.innerHTML='<div style="text-align:center;padding:20px;color:var(--m);">'+data.error+'</div>';return;}
+
+    const candles = data.candles;
+    if(!candles||!candles.length){wrap.innerHTML='<div style="text-align:center;padding:20px;color:var(--m);">Sin datos disponibles</div>';return;}
+
+    // Stats
+    const last  = candles[candles.length-1];
+    const first = candles[0];
+    const allH  = Math.max(...candles.map(c=>c.high));
+    const allL  = Math.min(...candles.map(c=>c.low));
+    const chg   = ((last.close - first.open)/first.open*100);
+    document.getElementById('cs-open').textContent  = '$'+first.open.toFixed(2);
+    document.getElementById('cs-high').textContent  = '$'+allH.toFixed(2);
+    document.getElementById('cs-low').textContent   = '$'+allL.toFixed(2);
+    document.getElementById('cs-close').textContent = '$'+last.close.toFixed(2);
+    document.getElementById('cs-chg').textContent   = (chg>=0?'+':'')+chg.toFixed(2)+'%';
+    document.getElementById('cs-chg').className     = 'cs-v '+(chg>=0?'up':'dn');
+
+    // Draw chart
+    wrap.innerHTML = '<canvas id="chart-canvas" style="width:100%;height:100%;"></canvas>';
+    const canvas = document.getElementById('chart-canvas');
+    canvas.width  = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+    const ctx = canvas.getContext('2d');
+
+    const W = canvas.width, H = canvas.height;
+    const pad = {t:10,r:60,b:30,l:10};
+    const cW = W - pad.l - pad.r;
+    const cH = H - pad.t - pad.b;
+    const n  = candles.length;
+    const minP = allL * 0.998;
+    const maxP = allH * 1.002;
+
+    const xPos = i => pad.l + (i / (n-1)) * cW;
+    const yPos = p => pad.t + (1 - (p - minP)/(maxP - minP)) * cH;
+
+    // Background grid
+    ctx.strokeStyle = 'rgba(255,255,255,.05)';
+    ctx.lineWidth = 1;
+    for(let i=0;i<5;i++){
+      const y = pad.t + (i/4)*cH;
+      ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+      const price = maxP - (i/4)*(maxP-minP);
+      ctx.fillStyle='rgba(74,158,187,.7)';ctx.font='10px DM Sans';
+      ctx.fillText('$'+price.toFixed(2), W-pad.r+4, y+4);
+    }
+
+    // Price line
+    const isUp = last.close >= first.open;
+    const lineColor = isUp ? '#00e676' : '#ff5252';
+    const grad = ctx.createLinearGradient(0, pad.t, 0, H-pad.b);
+    grad.addColorStop(0, isUp ? 'rgba(0,230,118,.3)' : 'rgba(255,82,82,.3)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+    // Fill area
+    ctx.beginPath();
+    ctx.moveTo(xPos(0), yPos(candles[0].close));
+    candles.forEach((c,i)=>ctx.lineTo(xPos(i), yPos(c.close)));
+    ctx.lineTo(xPos(n-1), H-pad.b);
+    ctx.lineTo(xPos(0), H-pad.b);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    candles.forEach((c,i)=>{
+      i===0 ? ctx.moveTo(xPos(i),yPos(c.close)) : ctx.lineTo(xPos(i),yPos(c.close));
+    });
+    ctx.stroke();
+
+    // Date labels
+    ctx.fillStyle='rgba(74,158,187,.6)';ctx.font='9px DM Sans';
+    const step = Math.floor(n/4);
+    [0,step,step*2,step*3,n-1].forEach(i=>{
+      if(i<n){
+        const d = candles[i].datetime.substring(0,10);
+        ctx.fillText(d, Math.max(pad.l, Math.min(xPos(i)-18, W-pad.r-40)), H-8);
+      }
+    });
+
+  }catch(e){
+    wrap.innerHTML='<div style="text-align:center;padding:20px;color:var(--m);">Error cargando gráfica</div>';
+    console.error(e);
+  }
+}
+
+function analyzeFromChart(){
+  closeChart();
+  sq('Analiza '+currentChartSymbol+' ('+currentChartName+') con datos reales de hoy. Análisis técnico completo con RSI, MACD, tendencia, señal de compra/venta, precio de entrada ideal, take profit, stop loss y proyección a 30, 90 y 180 días.');
+}
+
 function renderMarket(){
   const quotes=mktData.quotes||[];
   // Positions list
   document.getElementById('market-positions').innerHTML=quotes.map(q=>{
     if(!q||q.error)return`<div class="tick-row"><div class="tick-sym">${q?q.symbol:''}</div><div style="color:var(--m);font-size:11px;">Sin datos</div></div>`;
     const pct=parseFloat(q.change_pct||0);
-    return`<div class="tick-row">
+    return`<div class="tick-row" style="cursor:pointer;" onclick="openChart('${q.symbol}','',${q.price},'${q.change_pct}')">
       <div class="tick-sym">${q.symbol}</div>
       <div class="tick-info">
         <div class="tick-alloc">Vol: ${parseInt(q.volume||0).toLocaleString()}</div>
@@ -398,6 +548,7 @@ function renderMarket(){
         <div class="tick-price">$${q.price.toFixed(2)}</div>
         <div class="tick-chg ${pct>=0?'up':'dn'}">${pct>=0?'▲':'▼'}${Math.abs(pct).toFixed(2)}%</div>
         <div class="tick-amt">H:$${q.high.toFixed(2)} L:$${q.low.toFixed(2)}</div>
+        <div style="font-size:9px;color:var(--dim);margin-top:2px;">📈 ver gráfica</div>
       </div>
     </div>`;
   }).join('');
@@ -421,6 +572,39 @@ function renderMarket(){
   }
 }
 
+async function translateAndRenderNews(news, containerId, isGlobal){
+  if(!news||!news.length){
+    document.getElementById(containerId).innerHTML='<div style="color:var(--m);font-size:12px;padding:12px;text-align:center;">Sin noticias disponibles</div>';
+    return;
+  }
+  // Show original while translating
+  renderNewsRaw(news, containerId, isGlobal);
+  // Translate in background
+  try{
+    const r = await fetch('/api/translate-news',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({news:news.slice(0,8)})});
+    const d = await r.json();
+    if(d.translated&&d.translated.length) renderNewsRaw(d.translated, containerId, isGlobal, true);
+  }catch(e){}
+}
+
+function renderNewsRaw(news, containerId, isGlobal, translated=false){
+  const sc=s=>s==='Bullish'||s==='Somewhat-Bullish'?'sp':s==='Bearish'||s==='Somewhat-Bearish'?'sn':'su';
+  const sl=s=>s==='Bullish'||s==='Somewhat-Bullish'?'🟢 Alcista':s==='Bearish'||s==='Somewhat-Bearish'?'🔴 Bajista':'⚪ Neutral';
+  document.getElementById(containerId).innerHTML = news.map(n=>{
+    const title = translated&&n.title_es ? n.title_es : n.title;
+    const impact = translated&&n.impact_es ? '<div style="font-size:10px;color:var(--g);margin-top:2px;">💡 '+n.impact_es+'</div>' : '';
+    const tag = isGlobal
+      ? '<div class="ni-tag">🌍 '+n.source+' · '+n.time+'</div>'
+      : '<div class="ni-tag">📰 '+n.source+' · <span class="'+sc(n.sentiment||'')+'">'+sl(n.sentiment||'')+'</span></div>';
+    return`<div class="ni" onclick="analyzeNews('${(n.title||'').replace(/'/g,\"\\'\")}')">
+      ${tag}
+      <div class="ni-t">${title}</div>
+      ${impact}
+      ${translated?'':'<div class="ni-m">'+n.summary+'</div>'}
+    </div>`;
+  }).join('');
+}
+
 function renderNews(){
   // Financial news
   const news=mktData.news||[];
@@ -442,7 +626,7 @@ function renderNews(){
         <div class="ni-t">${n.title}</div>
         <div class="ni-m">${n.summary}</div>
       </div>`).join('')
-    :'<div style="color:var(--m);font-size:12px;">Configura NEWS_API_KEY para ver noticias globales.</div>';
+    :'<div style="color:var(--m);font-size:12px;">Configura GNEWS_API_KEY en Railway para ver noticias mundiales.</div>';
 
   // Crypto
   const cr=mktData.crypto||{};
@@ -622,5 +806,33 @@ loadMkt();
 loadHistory();
 setInterval(loadMkt,5*60*1000);
 </script>
+
+<!-- CHART MODAL -->
+<div id="chart-modal">
+  <div id="chart-header">
+    <div>
+      <div id="chart-sym">--</div>
+      <div id="chart-meta">--</div>
+    </div>
+    <button id="chart-close" onclick="closeChart()">✕</button>
+  </div>
+  <div id="chart-periods">
+    <button class="cp active" onclick="loadChart(null,'1day',7,'Última semana')">1S</button>
+    <button class="cp" onclick="loadChart(null,'1day',30,'Último mes')">1M</button>
+    <button class="cp" onclick="loadChart(null,'1day',90,'3 meses')">3M</button>
+    <button class="cp" onclick="loadChart(null,'1week',52,'1 año')">1A</button>
+  </div>
+  <div id="chart-canvas-wrap">
+    <canvas id="chart-canvas"></canvas>
+  </div>
+  <div id="chart-stats">
+    <div class="cs"><div class="cs-l">Apertura</div><div class="cs-v" id="cs-open">--</div></div>
+    <div class="cs"><div class="cs-l">Máximo</div><div class="cs-v up" id="cs-high">--</div></div>
+    <div class="cs"><div class="cs-l">Mínimo</div><div class="cs-v dn" id="cs-low">--</div></div>
+    <div class="cs"><div class="cs-l">Cierre</div><div class="cs-v" id="cs-close">--</div></div>
+    <div class="cs"><div class="cs-l">Cambio</div><div class="cs-v" id="cs-chg">--</div></div>
+  </div>
+  <button id="chart-analyze-btn" onclick="analyzeFromChart()">⚡ Analizar con APEX</button>
+</div>
 </body>
 </html>
