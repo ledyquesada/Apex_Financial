@@ -6,7 +6,7 @@
 <title>APEX Financial</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#020b18;--bg2:#041428;--g:#00d4aa;--b:#0088ff;--t:#ddf0f8;--m:#4a9ebb;--dim:#2d5a6e;--card:rgba(255,255,255,.05);--bord:rgba(0,212,170,.18);--red:#ff5252;--green:#00e676;--nav-h:60px;}
+:root{--bg:#020b18;--bg2:#041428;--g:#00d4aa;--b:#0088ff;--t:#ddf0f8;--m:#4a9ebb;--dim:#2d5a6e;--card:rgba(255,255,255,.05);--bord:rgba(0,212,170,.18);--red:#ff5252;--green:#00e676;--nav-h:62px;}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 body{background:linear-gradient(160deg,var(--bg),var(--bg2) 60%,var(--bg));color:var(--t);font-family:'DM Sans',sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 /* HEADER */
@@ -27,10 +27,10 @@ body{background:linear-gradient(160deg,var(--bg),var(--bg2) 60%,var(--bg));color
 .screen::-webkit-scrollbar-thumb{background:rgba(0,212,170,.2);border-radius:2px;}
 /* BOTTOM NAV */
 #nav{height:var(--nav-h);background:rgba(0,0,0,.7);border-top:1px solid rgba(255,255,255,.07);display:flex;flex-shrink:0;backdrop-filter:blur(10px);}
-.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--dim);cursor:pointer;transition:color .2s;padding:0;}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;color:var(--dim);cursor:pointer;transition:color .2s;padding:4px 2px;min-width:0;}
 .nav-btn.active{color:var(--g);}
-.nav-btn .ni{font-size:20px;line-height:1;}
-.nav-btn .nl{font-size:9px;font-weight:500;letter-spacing:.3px;}
+.nav-btn .ni{font-size:22px;line-height:1;flex-shrink:0;}
+.nav-btn .nl{font-size:10px;font-weight:500;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .nav-btn.active .ni{filter:drop-shadow(0 0 6px rgba(0,212,170,.6));}
 /* CARDS */
 .card{background:var(--card);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:14px;margin-bottom:10px;}
@@ -121,7 +121,7 @@ select.fi option{background:#041428;}
 .fg-lbl{font-size:12px;margin-top:4px;}
 .fg-desc{font-size:11px;color:var(--m);margin-top:6px;line-height:1.5;}
 /* CRYPTO GRID */
-.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:12px;}
 .cc{background:var(--card);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:12px;}
 .cc-n{font-size:10px;color:var(--m);margin-bottom:4px;}
 .cc-p{font-size:16px;font-weight:700;}
@@ -287,7 +287,7 @@ Cuéntame sobre tu portafolio o usa los botones rápidos. Puedo analizar <b>cual
     <span class="ni">📊</span><span class="nl">Mercado</span>
   </button>
   <button class="nav-btn" onclick="showScreen('opp',this)">
-    <span class="ni">🚀</span><span class="nl">Oportunidades</span>
+    <span class="ni">🚀</span><span class="nl">Invertir</span>
   </button>
   <button class="nav-btn" onclick="showScreen('news',this)">
     <span class="ni">📰</span><span class="nl">Noticias</span>
@@ -432,7 +432,7 @@ function renderNews(){
         <div class="ni-t">${n.title}</div>
         <div class="ni-m">${n.summary}</div>
       </div>`).join('')
-    :'<div style="color:var(--m);font-size:13px;">Sin noticias disponibles</div>';
+    :'<div style="color:var(--m);font-size:12px;padding:12px;text-align:center;">📰 Noticias financieras disponibles mañana (límite diario de Alpha Vantage). Agrega la key de GNews para noticias mundiales.</div>';
 
   // Global news
   const gnews=mktData.global_news||[];
