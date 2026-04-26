@@ -632,12 +632,15 @@ def translate_news():
     if not news_list:
         return jsonify({"translated": []})
     
-    titles = "
-".join([f"{i+1}. {n.get('title','')}" for i,n in enumerate(news_list[:8])])
-    prompt = f"""Traduce y resume brevemente al español estas noticias financieras. 
-Para cada una da: título traducido en español (máximo 15 palabras) y una frase de impacto en mercados (máximo 10 palabras).
-Formato: número|título en español|impacto
-{titles}"""
+    items = [f"{i+1}. {n.get('title','')}" for i,n in enumerate(news_list[:8])]
+    titles = "\n".join(items)
+    prompt = (
+        "Traduce y resume brevemente al español estas noticias financieras.\n"
+        "Para cada una da: título traducido en español (máximo 15 palabras) "
+        "y una frase de impacto en mercados (máximo 10 palabras).\n"
+        "Formato: número|título en español|impacto\n"
+        + titles
+    )
     
     try:
         r = requests.post(
@@ -648,8 +651,7 @@ Formato: número|título en español|impacto
         )
         text = "".join(b["text"] for b in r.json().get("content",[]) if b["type"]=="text")
         translated = []
-        for line in text.strip().split("
-"):
+        for line in text.strip().splitlines():
             parts = line.split("|")
             if len(parts) >= 2:
                 idx = parts[0].strip().rstrip(".")
