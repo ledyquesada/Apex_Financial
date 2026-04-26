@@ -20,6 +20,8 @@ CORS(app)
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 AV_KEY        = os.environ.get("ALPHA_VANTAGE_KEY", "")
 NEWS_API_KEY  = os.environ.get("NEWS_API_KEY", "")
+GNEWS_API_KEY    = os.environ.get("GNEWS_API_KEY", "")
+TWELVE_DATA_KEY  = os.environ.get("TWELVE_DATA_KEY", "")  # twelvedata.com - 800/day gratis
 EMAIL_FROM    = os.environ.get("EMAIL_FROM", "")
 EMAIL_PASS    = os.environ.get("EMAIL_PASS", "")
 EMAIL_1       = os.environ.get("EMAIL_1", "")
@@ -142,32 +144,97 @@ def save_portfolio(portfolio):
 
 # ── ALPHA VANTAGE ─────────────────────────────────────────
 def get_quote(symbol):
-    try:
-        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={AV_KEY}"
-        r = requests.get(url, timeout=10)
-        q = r.json().get("Global Quote", {})
-        if not q or not q.get("05. price"): return None
-        return {
-            "symbol": symbol,
-            "price":      float(q.get("05. price", 0)),
-            "change":     float(q.get("09. change", 0)),
-            "change_pct": q.get("10. change percent", "0%").replace("%",""),
-            "volume":     q.get("06. volume", "N/A"),
-            "prev_close": float(q.get("08. previous close", 0)),
-            "high":       float(q.get("03. high", 0)),
-            "low":        float(q.get("04. low", 0)),
-            "open":       float(q.get("02. open", 0)),
-        }
-    except: return None
+    """Precio en tiempo real:
+    1) Twelve Data (800/day gratis, sin restricciones de servidor)
+    2) Alpha Vantage (fallback, 25/day)
+    """
+    import time
+    now = time.time()
+    cache_key = f"quote_{symbol}"
+    if cache_key in _quote_cache and now - _cache_time.get(cache_key,0) < CACHE_SECS:
+        return _quote_cache[cache_key]
+
+    result = None
+
+    # PRIMARY: Twelve Data
+    if TWELVE_DATA_KEY and not result:
+        try:
+            url = f"https://api.twelvedata.com/quote?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
+            r = requests.get(url, timeout=10)
+            d = r.json()
+            if d.get("status") != "error" and d.get("close"):
+                price      = float(d.get("close", 0))
+                prev_close = float(d.get("previous_close") or price)
+                change     = round(price - prev_close, 4)
+                change_pct = round((change / prev_close * 100), 2) if prev_close else 0
+                result = {
+                    "symbol":     symbol,
+                    "price":      price,
+                    "change":     change,
+                    "change_pct": str(change_pct),
+                    "volume":     str(d.get("volume","N/A")),
+                    "prev_close": prev_close,
+                    "high":       float(d.get("high", price)),
+                    "low":        float(d.get("low", price)),
+                    "open":       float(d.get("open", price)),
+                    "currency":   d.get("currency","USD"),
+                    "name":       d.get("name",""),
+                }
+        except Exception as e:
+            print(f"TwelveData error {symbol}: {e}")
+
+    # FALLBACK: Alpha Vantage
+    if not result:
+        try:
+            url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={AV_KEY}"
+            r = requests.get(url, timeout=10)
+            q = r.json().get("Global Quote", {})
+            if q and q.get("05. price"):
+                price      = float(q.get("05. price", 0))
+                prev_close = float(q.get("08. previous close", price))
+                change     = float(q.get("09. change", 0))
+                change_pct = q.get("10. change percent","0%").replace("%","")
+                result = {
+                    "symbol":     symbol,
+                    "price":      price,
+                    "change":     change,
+                    "change_pct": change_pct,
+                    "volume":     q.get("06. volume","N/A"),
+                    "prev_close": prev_close,
+                    "high":       float(q.get("03. high", price)),
+                    "low":        float(q.get("04. low", price)),
+                    "open":       float(q.get("02. open", price)),
+                    "currency":   "USD",
+                }
+        except Exception as e:
+            print(f"AV fallback error {symbol}: {e}")
+
+    if result:
+        _quote_cache[cache_key] = result
+        _cache_time[cache_key]  = now
+    return result
+
+# Simple in-memory cache to avoid burning AV quota
+_quote_cache = {}
+_cache_time  = {}
+CACHE_SECS   = 300  # 5 min cache
 
 def get_rsi(symbol):
+    import time
+    now = time.time()
+    cache_key = f"rsi_{symbol}"
+    if cache_key in _quote_cache and now - _cache_time.get(cache_key,0) < CACHE_SECS:
+        return _quote_cache[cache_key]
     try:
         url = f"https://www.alphavantage.co/query?function=RSI&symbol={symbol}&interval=daily&time_period=14&series_type=close&apikey={AV_KEY}"
         r = requests.get(url, timeout=10)
         vals = r.json().get("Technical Analysis: RSI", {})
         if not vals: return None
         latest = sorted(vals.keys())[-1]
-        return round(float(vals[latest]["RSI"]), 2)
+        result = round(float(vals[latest]["RSI"]), 2)
+        _quote_cache[cache_key] = result
+        _cache_time[cache_key]  = now
+        return result
     except: return None
 
 def get_crypto():
@@ -177,8 +244,35 @@ def get_crypto():
     except: return {}
 
 def get_news(tickers="AAPL,GOOGL,SPY"):
+    """Noticias financieras — Yahoo Finance (primario) + Alpha Vantage (secundario)"""
+    news = []
+    # Primary: Yahoo Finance news (no limit)
     try:
-        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={tickers}&sort=LATEST&limit=15&apikey={AV_KEY}"
+        symbols = tickers.split(",")[:3]
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        seen = set()
+        for sym in symbols:
+            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={sym}&quotesCount=0&newsCount=5"
+            articles = requests.get(url, headers=headers, timeout=10).json().get("news", [])
+            for a in articles:
+                title = a.get("title","")
+                if title and title not in seen:
+                    seen.add(title)
+                    news.append({
+                        "title":     title,
+                        "summary":   a.get("summary","")[:250] if a.get("summary") else "",
+                        "source":    a.get("publisher","Yahoo Finance"),
+                        "sentiment": "Neutral",
+                        "time":      datetime.fromtimestamp(a.get("providerPublishTime",0)).strftime("%Y%m%d") if a.get("providerPublishTime") else "",
+                        "type":      "financial",
+                    })
+        if news:
+            return news[:10]
+    except Exception as e:
+        print(f"Yahoo news error: {e}")
+    # Fallback: Alpha Vantage (uses quota)
+    try:
+        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={tickers}&sort=LATEST&limit=10&apikey={AV_KEY}"
         feed = requests.get(url, timeout=10).json().get("feed", [])
         return [{"title": n.get("title",""), "summary": n.get("summary","")[:250],
                  "source": n.get("source",""), "sentiment": n.get("overall_sentiment_label","Neutral"),
@@ -186,9 +280,31 @@ def get_news(tickers="AAPL,GOOGL,SPY"):
     except: return []
 
 def get_global_news():
-    if not NEWS_API_KEY: return []
+    """Noticias mundiales via GNews API (permite llamadas desde servidor)"""
+    key = GNEWS_API_KEY or NEWS_API_KEY
+    if not key: return []
     try:
-        queries = ["Federal Reserve interest rates economy", "geopolitical conflict oil markets", "inflation GDP economic data"]
+        # GNews API
+        if GNEWS_API_KEY:
+            topics = ["business", "world"]
+            all_news = []
+            for topic in topics:
+                url = (f"https://gnews.io/api/v4/top-headlines?topic={topic}"
+                       f"&lang=en&max=5&apikey={GNEWS_API_KEY}")
+                articles = requests.get(url, timeout=10).json().get("articles", [])
+                for a in articles:
+                    all_news.append({
+                        "title":   a.get("title",""),
+                        "summary": (a.get("description") or "")[:250],
+                        "source":  a.get("source",{}).get("name",""),
+                        "sentiment": "Global",
+                        "time":    (a.get("publishedAt","")[:10]),
+                        "type":    "global",
+                    })
+            seen = set()
+            return [n for n in all_news if n["title"] not in seen and not seen.add(n["title"])][:12]
+        # Fallback: NewsAPI (solo funciona en desarrollo local)
+        queries = ["stock market economy", "Federal Reserve inflation", "geopolitical oil markets"]
         all_news = []
         for q in queries:
             url = (f"https://newsapi.org/v2/everything?q={requests.utils.quote(q)}"
@@ -202,7 +318,7 @@ def get_global_news():
         seen = set()
         return [n for n in all_news if n["title"] not in seen and not seen.add(n["title"])][:12]
     except Exception as e:
-        print(f"NewsAPI error: {e}"); return []
+        print(f"Global news error: {e}"); return []
 
 def get_fear_greed():
     try:
@@ -211,6 +327,19 @@ def get_fear_greed():
     except: return None
 
 def search_symbol(query):
+    """Busca símbolos: Twelve Data primario, Alpha Vantage fallback"""
+    # Primary: Twelve Data symbol search
+    if TWELVE_DATA_KEY:
+        try:
+            url = f"https://api.twelvedata.com/symbol_search?symbol={requests.utils.quote(query)}&apikey={TWELVE_DATA_KEY}"
+            r = requests.get(url, timeout=10)
+            data = r.json().get("data", [])
+            if data:
+                return [{"symbol": d.get("symbol",""), "name": d.get("instrument_name",""),
+                         "type": d.get("instrument_type",""), "region": d.get("exchange","")} for d in data[:8]]
+        except Exception as e:
+            print(f"TwelveData search error: {e}")
+    # Fallback: Alpha Vantage
     try:
         url = f"https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords={query}&apikey={AV_KEY}"
         matches = requests.get(url, timeout=10).json().get("bestMatches", [])
