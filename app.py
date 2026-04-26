@@ -536,6 +536,57 @@ def market_data():
                     "global_news":get_global_news(),"fear_greed":get_fear_greed(),
                     "status":"ok","updated":datetime.now().strftime("%H:%M:%S")})
 
+@app.route("/api/chart/<symbol>")
+def get_chart(symbol):
+    """Datos históricos para gráfica — Twelve Data primario, AV fallback"""
+    interval  = request.args.get("interval", "1day")   # 1min,5min,15min,1h,1day,1week
+    outputsize = request.args.get("outputsize", "90")  # número de velas
+
+    # Twelve Data
+    if TWELVE_DATA_KEY:
+        try:
+            url = (f"https://api.twelvedata.com/time_series"
+                   f"?symbol={symbol}&interval={interval}&outputsize={outputsize}"
+                   f"&apikey={TWELVE_DATA_KEY}")
+            r = requests.get(url, timeout=15)
+            data = r.json()
+            if data.get("status") != "error" and data.get("values"):
+                values = data["values"]
+                values.reverse()  # oldest first
+                return jsonify({
+                    "symbol": symbol,
+                    "interval": interval,
+                    "candles": [{
+                        "datetime": v["datetime"],
+                        "open":  float(v["open"]),
+                        "high":  float(v["high"]),
+                        "low":   float(v["low"]),
+                        "close": float(v["close"]),
+                        "volume": int(v.get("volume",0)),
+                    } for v in values],
+                    "source": "twelvedata"
+                })
+        except Exception as e:
+            print(f"Chart TwelveData error: {e}")
+
+    # Fallback: Alpha Vantage daily
+    try:
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize=compact&apikey={AV_KEY}"
+        r = requests.get(url, timeout=15)
+        ts = r.json().get("Time Series (Daily)", {})
+        if ts:
+            candles = []
+            for date in sorted(ts.keys())[-int(outputsize):]:
+                d = ts[date]
+                candles.append({"datetime": date, "open": float(d["1. open"]),
+                                 "high": float(d["2. high"]), "low": float(d["3. low"]),
+                                 "close": float(d["4. close"]), "volume": int(d["5. volume"])})
+            return jsonify({"symbol": symbol, "interval": interval, "candles": candles, "source": "alphavantage"})
+    except Exception as e:
+        print(f"Chart AV error: {e}")
+
+    return jsonify({"error": "No se pudieron obtener datos históricos"}), 404
+
 @app.route("/api/search")
 def search():
     q = request.args.get("q","")
@@ -573,6 +624,47 @@ def get_history(session_id):
 @app.route("/api/sessions")
 def get_sessions():
     return jsonify(db_get_sessions())
+
+@app.route("/api/translate-news", methods=["POST"])
+def translate_news():
+    """Traduce y resume noticias al español usando Claude"""
+    news_list = request.json.get("news", [])
+    if not news_list:
+        return jsonify({"translated": []})
+    
+    titles = "
+".join([f"{i+1}. {n.get('title','')}" for i,n in enumerate(news_list[:8])])
+    prompt = f"""Traduce y resume brevemente al español estas noticias financieras. 
+Para cada una da: título traducido en español (máximo 15 palabras) y una frase de impacto en mercados (máximo 10 palabras).
+Formato: número|título en español|impacto
+{titles}"""
+    
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"},
+            json={"model":"claude-opus-4-5","max_tokens":800,"messages":[{"role":"user","content":prompt}]},
+            timeout=30,
+        )
+        text = "".join(b["text"] for b in r.json().get("content",[]) if b["type"]=="text")
+        translated = []
+        for line in text.strip().split("
+"):
+            parts = line.split("|")
+            if len(parts) >= 2:
+                idx = parts[0].strip().rstrip(".")
+                try:
+                    i = int(idx) - 1
+                    if 0 <= i < len(news_list):
+                        translated.append({
+                            **news_list[i],
+                            "title_es": parts[1].strip(),
+                            "impact_es": parts[2].strip() if len(parts) > 2 else "",
+                        })
+                except: pass
+        return jsonify({"translated": translated or news_list})
+    except Exception as e:
+        return jsonify({"translated": news_list})
 
 @app.route("/api/opportunities", methods=["POST"])
 def opportunities():
