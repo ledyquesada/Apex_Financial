@@ -22,6 +22,7 @@ AV_KEY        = os.environ.get("ALPHA_VANTAGE_KEY", "")
 NEWS_API_KEY  = os.environ.get("NEWS_API_KEY", "")
 GNEWS_API_KEY    = os.environ.get("GNEWS_API_KEY", "")
 TWELVE_DATA_KEY  = os.environ.get("TWELVE_DATA_KEY", "")  # twelvedata.com - 800/day gratis
+RESEND_KEY       = os.environ.get("RESEND_API_KEY", "")    # resend.com - 100/day gratis, sin dominio
 EMAIL_FROM    = os.environ.get("EMAIL_FROM", "")
 EMAIL_PASS    = os.environ.get("EMAIL_PASS", "")
 EMAIL_1       = os.environ.get("EMAIL_1", "")
@@ -395,19 +396,35 @@ def claude_chat(messages, market_context=""):
 
 # ── EMAIL ─────────────────────────────────────────────────
 def send_email(subject, html_body):
-    if not EMAIL_FROM or not EMAIL_PASS: return False
+    """Envía email via Resend API — sin dominio, funciona en Railway"""
+    if not RESEND_KEY:
+        print("Email omitido: RESEND_API_KEY no configurada")
+        return False
     recipients = [e for e in [EMAIL_1, EMAIL_2] if e]
-    if not recipients: return False
+    if not recipients:
+        print("Email omitido: no hay destinatarios configurados")
+        return False
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = f"APEX Financial ⚡ <{EMAIL_FROM}>"
-        msg["To"]      = ", ".join(recipients)
-        msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-            s.login(EMAIL_FROM, EMAIL_PASS)
-            s.sendmail(EMAIL_FROM, recipients, msg.as_string())
-        return True
+        r = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": "APEX Financial <onboarding@resend.dev>",
+                "to": recipients,
+                "subject": subject,
+                "html": html_body
+            },
+            timeout=30
+        )
+        if r.status_code in (200, 201):
+            print(f"✅ Email enviado a {recipients}")
+            return True
+        else:
+            print(f"Email error Resend: {r.status_code} - {r.text}")
+            return False
     except Exception as e:
         print(f"Email error: {e}"); return False
 
@@ -425,8 +442,8 @@ def make_email_html(subject, analysis, urgent=False):
 </div></body></html>"""
 
 # ── SCHEDULED JOB ─────────────────────────────────────────
-def scheduled_analysis():
-    print(f"[{datetime.now()}] Análisis programado iniciado...")
+def scheduled_analysis(moment="análisis"):
+    print(f"[{datetime.now()}] Análisis programado iniciado ({moment})...")
     portfolio = load_portfolio()
     symbols = [p["symbol"] for p in portfolio]
     quotes = []
@@ -460,11 +477,42 @@ def scheduled_analysis():
 
     if urgent_sells:
         analysis = claude_chat([{"role":"user","content":f"ALERTA URGENTE señales de venta: {urgent_sells}. Analiza y da recomendación inmediata."}], ctx)
-        send_email("🚨 APEX ALERTA — Señal de venta urgente", make_email_html("Alerta Urgente", analysis, urgent=True))
+        send_email(f"🚨 APEX ALERTA — Señal de venta urgente ({moment.upper()})", make_email_html("Alerta Urgente", analysis, urgent=True))
 
-    total = sum(p.get("amount",0) for p in portfolio)
-    analysis_full = claude_chat([{"role":"user","content":f"Resumen financiero completo del portafolio de ${total:.0f} USD. Estado de cada posición, señales técnicas, impacto de noticias, 2-3 oportunidades adicionales para investigar."}], ctx)
-    send_email("⚡ APEX — Análisis cada 4 horas", make_email_html("Resumen de Mercado", analysis_full))
+    # Portafolios separados por dueño
+    ledy_port  = [p for p in portfolio if p.get("owner","ledy") == "ledy"]
+    yorg_port  = [p for p in portfolio if p.get("owner","ledy") == "yorguin"]
+    total_ledy = sum(p.get("amount",0) for p in ledy_port)
+    total_yorg = sum(p.get("amount",0) for p in yorg_port)
+
+    def port_lines(items):
+        return "\n".join([f"  - {p['symbol']} ({p.get('name','')}): ${p.get('amount',0):.2f} ({p.get('allocation',0)}%) compra: ${p.get('avg_price',0):.2f}" for p in items]) or "Sin posiciones."
+
+    combined_ctx = (
+        f"PORTAFOLIO LEDY (${total_ledy:.2f} USD):\n{port_lines(ledy_port)}\n\n"
+        f"PORTAFOLIO YORGUIN (${total_yorg:.2f} USD):\n{port_lines(yorg_port)}"
+    )
+
+    prompt = (
+        f"Genera análisis financiero de {moment} de bolsa para dos portafolios.\n\n"
+        "Estructura EXACTA:\n\n"
+        "👩‍💼 LEDY — Tu portafolio hoy:\n"
+        "[análisis de cada posición de Ledy: precio real, señal técnica, qué hacer hoy]\n\n"
+        "👨‍💼 YORGUIN — Tu portafolio hoy:\n"
+        "[análisis de cada posición de Yorguin: precio real, señal técnica, qué hacer hoy]\n\n"
+        "🎯 ACCIONES RECOMENDADAS HOY:\n"
+        "[recomendaciones concretas para cada uno]\n\n"
+        "🚀 OPORTUNIDADES DEL DÍA:\n"
+        "[2-3 activos con potencial detectados hoy]\n\n"
+        "⚠️ ALERTAS:\n"
+        "[señales de venta o riesgo urgente si las hay]"
+    )
+
+    analysis_full = claude_chat([{"role":"user","content":prompt}], ctx, combined_ctx)
+    send_email(
+        f"⚡ APEX — Análisis de {moment.upper()} · {datetime.now().strftime('%d/%m/%Y')}",
+        make_email_html(f"Análisis {moment.capitalize()}", analysis_full)
+    )
     print("Análisis programado completado.")
 
 # ── ROUTES ────────────────────────────────────────────────
@@ -607,10 +655,25 @@ def chat():
     session_id = body.get("session_id", "default")
     user_msg   = msgs[-1]["content"] if msgs else ""
 
+    # Build dynamic portfolio context — filtered by current user
+    owner      = body.get("owner", "ledy")
+    portfolio  = load_portfolio()
+    mine       = [p for p in portfolio if p.get("owner","ledy") == owner]
+    total      = sum(p.get("amount",0) for p in mine)
+    owner_name = "Ledy" if owner == "ledy" else "Yorguin"
+    port_lines = [f"Portafolio de {owner_name} (total: ${total:.2f} USD):"]
+    for p in mine:
+        port_lines.append(
+            f"  - {p['symbol']} ({p.get('name','')}): "
+            f"${p.get('amount',0):.2f} ({p.get('allocation',0)}%) "
+            f"precio compra: ${p.get('avg_price',0):.2f}"
+        )
+    portfolio_context = "\n".join(port_lines)
+
     # Guardar mensaje del usuario
     db_save_message(session_id, "user", user_msg)
 
-    response = claude_chat(msgs, context)
+    response = claude_chat(msgs, context, portfolio_context)
 
     # Guardar respuesta del asistente
     db_save_message(session_id, "assistant", response)
@@ -687,8 +750,13 @@ def trigger_analysis():
     return jsonify({"ok":True,"message":"Análisis iniciado, recibirás el email en unos minutos."})
 
 # ── SCHEDULER + INIT ──────────────────────────────────────
-scheduler = BackgroundScheduler()
-scheduler.add_job(scheduled_analysis, "interval", hours=4, id="apex_analysis")
+scheduler = BackgroundScheduler(timezone="America/Bogota")
+# Apertura bolsa NY: 8:30am Colombia (9:30am ET)
+scheduler.add_job(scheduled_analysis, "cron", hour=8, minute=30, id="apex_open",
+                  kwargs={"moment": "apertura"})
+# Cierre bolsa NY: 3:00pm Colombia (4:00pm ET)
+scheduler.add_job(scheduled_analysis, "cron", hour=15, minute=0, id="apex_close",
+                  kwargs={"moment": "cierre"})
 scheduler.start()
 init_db()
 
