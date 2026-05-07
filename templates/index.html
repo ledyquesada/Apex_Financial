@@ -166,6 +166,19 @@ select.fi option{background:#041428;}
 
 @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* LOGIN */
+#login{position:fixed;inset:0;background:linear-gradient(160deg,#020b18,#041428);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;}
+#login.hide{display:none;}
+.login-box{background:rgba(255,255,255,.03);border:1px solid rgba(0,212,170,.3);border-radius:24px;padding:40px 32px;max-width:340px;width:100%;text-align:center;}
+.login-title{font-family:'Playfair Display',serif;font-size:28px;color:#00d4aa;margin-bottom:6px;}
+.login-sub{font-size:11px;color:#4a9ebb;letter-spacing:2px;text-transform:uppercase;margin-bottom:32px;}
+.login-q{font-size:15px;color:#ddf0f8;margin-bottom:20px;}
+.login-btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:"DM Sans",sans-serif;margin-bottom:10px;transition:opacity .2s;}
+.login-btn:active{opacity:.8;}
+.login-btn.ledy{background:linear-gradient(135deg,#00d4aa,#0088ff);color:white;}
+.login-btn.yorg{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#ddf0f8;}
+.login-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;margin-top:16px;background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.2);color:#4a9ebb;}
 </style>
 </head>
 <body>
@@ -177,7 +190,8 @@ select.fi option{background:#041428;}
     <div class="logo-ic">⚡</div>
     <div><div class="logo-t">APEX</div><div class="logo-s">FINANCIAL INTELLIGENCE</div></div>
   </div>
-  <div style="display:flex;gap:5px;">
+  <div style="display:flex;gap:5px;align-items:center;">
+    <span class="hbadge" id="user-badge" onclick="logout()" style="cursor:pointer;"></span>
     <span class="hbadge" id="live-b">📊 --</span>
     <span class="hbadge b" id="time-b">🕐 --:--</span>
   </div>
@@ -351,10 +365,14 @@ function renderMktBar(){
 }
 
 function renderPort(){
-  fetch('/api/portfolio').then(r=>r.json()).then(p=>{
+  document.getElementById('port-list').innerHTML='<div style="color:var(--m);font-size:13px;text-align:center;padding:16px;">⏳ Cargando portafolio...</div>';
+  fetch('/api/portfolio')
+    .then(r=>{if(!r.ok)throw new Error('Error '+r.status);return r.json();})
+    .then(p=>{
+    if(!Array.isArray(p)){p=[];}
     const mine=p.filter(x=>(x.owner||'ledy')===OWNER);
-    const total=mine.reduce((s,x)=>s+(x.amount||0),0);
-    document.getElementById('port-total').textContent='$'+total.toFixed(2);
+    const total=mine.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+    document.getElementById('port-total').textContent='$'+parseFloat(total).toFixed(2);
     const qMap={};(MKT.quotes||[]).forEach(q=>{if(q&&!q.error)qMap[q.symbol]=q;});
     let pnls=[], pnlCount=0;
     mine.forEach(p=>{
@@ -641,7 +659,7 @@ async function sendMsg(){
   appendMsg('user',txt);HIST.push({role:'user',content:txt});
   BUSY=true;document.getElementById('sbtn').disabled=true;showTyping();
   try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:HIST,market_context:buildCtx(),session_id:SID})});
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:HIST,market_context:buildCtx(),session_id:SID,owner:OWNER})});
     const d=await r.json();rmTyping();
     const resp=d.response||d.error||'Error';
     appendMsg('assistant',resp);HIST.push({role:'assistant',content:resp});
@@ -684,10 +702,58 @@ document.getElementById('sin').addEventListener('keydown',function(e){if(e.key==
 // ── TOAST ─────────────────────────────────────────────────
 function toast(m,d=3000){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',d);}
 
+// ── LOGIN ─────────────────────────────────────────────────
+function doLogin(who){
+  OWNER = who;
+  localStorage.setItem('apex_user', who);
+  document.getElementById('login').classList.add('hide');
+  // Update header with user name
+  const name = who === 'ledy' ? '👩‍💼 Ledy' : '👨‍💼 Yorguin';
+  document.getElementById('user-badge').textContent = name;
+  // Load data
+  loadMkt();
+  loadHistory();
+}
+
+function checkLogin(){
+  const saved = localStorage.getItem('apex_user');
+  if(saved){
+    OWNER = saved;
+    document.getElementById('login').classList.add('hide');
+    const name = saved === 'ledy' ? '👩‍💼 Ledy' : '👨‍💼 Yorguin';
+    document.getElementById('user-badge').textContent = name;
+    loadMkt();
+    loadHistory();
+  }
+  // If no saved user, login screen stays visible
+}
+
+function logout(){
+  localStorage.removeItem('apex_user');
+  localStorage.removeItem('apex_sid');
+  // Reset state
+  OWNER='ledy'; HIST=[];
+  document.getElementById('msgs').innerHTML='';
+  document.getElementById('qa').style.display='flex';
+  document.getElementById('login').classList.remove('hide');
+}
+
 // ── INIT ──────────────────────────────────────────────────
-loadMkt();
-loadHistory();
+checkLogin();
 setInterval(loadMkt,5*60*1000);
 </script>
+
+<!-- LOGIN SCREEN -->
+<div id="login">
+  <div class="login-box">
+    <div style="font-size:52px;margin-bottom:12px;">⚡</div>
+    <div class="login-title">APEX</div>
+    <div class="login-sub">Financial Intelligence</div>
+    <div class="login-q">¿Quién eres?</div>
+    <button class="login-btn ledy" onclick="doLogin('ledy')">👩‍💼 Soy Ledy</button>
+    <button class="login-btn yorg" onclick="doLogin('yorguin')">👨‍💼 Soy Yorguin</button>
+    <div class="login-badge">Tu sesión se recordará en este dispositivo</div>
+  </div>
+</div>
 </body>
 </html>
