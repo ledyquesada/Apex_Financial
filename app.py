@@ -56,11 +56,24 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_session ON chat_sessions(session_id, created_at);
+            
+            CREATE TABLE IF NOT EXISTS portfolio (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(20) NOT NULL,
+                name VARCHAR(200),
+                amount DECIMAL(12,4) DEFAULT 0,
+                avg_price DECIMAL(12,4) DEFAULT 0,
+                allocation DECIMAL(6,2) DEFAULT 0,
+                owner VARCHAR(20) DEFAULT 'ledy',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(symbol, owner)
+            );
         """)
         conn.commit()
         cur.close()
         conn.close()
-        print("DB initialized OK")
+        print("DB initialized OK — tables ready")
     except Exception as e:
         print(f"DB init error: {e}")
 
@@ -158,7 +171,15 @@ def load_portfolio():
         return []
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM portfolio ORDER BY owner, amount DESC")
+        cur.execute("""
+            SELECT symbol, name, 
+                   CAST(amount AS FLOAT) as amount,
+                   CAST(avg_price AS FLOAT) as avg_price,
+                   CAST(allocation AS FLOAT) as allocation,
+                   owner
+            FROM portfolio 
+            ORDER BY owner, amount DESC
+        """)
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -810,7 +831,6 @@ def trigger_analysis():
     return jsonify({"ok":True,"message":"Análisis iniciado, recibirás el email en unos minutos."})
 
 # ── SCHEDULER + INIT ──────────────────────────────────────
-init_portfolio_table()  # Create portfolio table if not exists
 scheduler = BackgroundScheduler(timezone="America/Bogota")
 # Apertura bolsa NY: 8:30am Colombia (9:30am ET)
 scheduler.add_job(scheduled_analysis, "cron", hour=8, minute=30, id="apex_open",
