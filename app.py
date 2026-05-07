@@ -474,7 +474,7 @@ QQQM 15% | VT 45% | GOOGL 15% | CVX 15% | IAU 10%
 
 Idioma: siempre español. Sé específico con números reales. Actúa como el mejor analista financiero del mundo."""
 
-def claude_chat(messages, market_context=""):
+def claude_chat(messages, market_context="", portfolio_context=""):
     if not ANTHROPIC_KEY:
         return "Error: ANTHROPIC_API_KEY no configurada."
     system = SYSTEM_PROMPT
