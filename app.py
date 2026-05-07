@@ -123,25 +123,104 @@ def db_get_sessions():
         print(f"DB sessions error: {e}")
         return []
 
-# ── PORTFOLIO STORAGE ─────────────────────────────────────
-PORTFOLIO_FILE = "portfolio.json"
-DEFAULT_PORTFOLIO = [
-    {"symbol": "QQQM",  "name": "Invesco NASDAQ 100 ETF",  "shares": 0, "avg_price": 0, "amount": 52.5,  "allocation": 15},
-    {"symbol": "VT",    "name": "Vanguard Total World ETF", "shares": 0, "avg_price": 0, "amount": 157.5, "allocation": 45},
-    {"symbol": "GOOGL", "name": "Alphabet (Google)",        "shares": 0, "avg_price": 0, "amount": 52.5,  "allocation": 15},
-    {"symbol": "CVX",   "name": "Chevron Corporation",      "shares": 0, "avg_price": 0, "amount": 52.5,  "allocation": 15},
-    {"symbol": "IAU",   "name": "iShares Gold Trust ETF",   "shares": 0, "avg_price": 0, "amount": 35.0,  "allocation": 10},
-]
+# ── PORTFOLIO STORAGE (PostgreSQL) ───────────────────────
+def init_portfolio_table():
+    """Crea tabla de portafolio si no existe"""
+    conn = get_db()
+    if not conn: return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(20) NOT NULL,
+                name VARCHAR(200),
+                amount DECIMAL(12,4) DEFAULT 0,
+                avg_price DECIMAL(12,4) DEFAULT 0,
+                allocation DECIMAL(6,2) DEFAULT 0,
+                owner VARCHAR(20) DEFAULT 'ledy',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(symbol, owner)
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Portfolio table OK")
+    except Exception as e:
+        print(f"Portfolio table error: {e}")
 
 def load_portfolio():
-    if os.path.exists(PORTFOLIO_FILE):
-        with open(PORTFOLIO_FILE) as f:
-            return json.load(f)
-    return DEFAULT_PORTFOLIO.copy()
+    """Carga portafolio desde PostgreSQL"""
+    conn = get_db()
+    if not conn:
+        return []
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM portfolio ORDER BY owner, amount DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Load portfolio error: {e}")
+        return []
 
-def save_portfolio(portfolio):
-    with open(PORTFOLIO_FILE, "w") as f:
-        json.dump(portfolio, f, indent=2)
+def save_portfolio_item(symbol, name, amount, avg_price, owner):
+    """Inserta o actualiza una posición en el portafolio"""
+    conn = get_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO portfolio (symbol, name, amount, avg_price, owner, updated_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (symbol, owner)
+            DO UPDATE SET
+                amount = portfolio.amount + EXCLUDED.amount,
+                avg_price = CASE WHEN EXCLUDED.avg_price > 0 THEN EXCLUDED.avg_price ELSE portfolio.avg_price END,
+                name = COALESCE(EXCLUDED.name, portfolio.name),
+                updated_at = NOW()
+        """, (symbol, name, amount, avg_price, owner))
+        conn.commit()
+        # Recalculate allocations for this owner
+        cur.execute("SELECT SUM(amount) FROM portfolio WHERE owner=%s", (owner,))
+        total = cur.fetchone()[0] or 1
+        cur.execute("""
+            UPDATE portfolio SET allocation = ROUND((amount / %s * 100)::numeric, 1)
+            WHERE owner = %s
+        """, (total, owner))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Save portfolio error: {e}")
+        return False
+
+def delete_portfolio_item(symbol, owner):
+    """Elimina una posición del portafolio"""
+    conn = get_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM portfolio WHERE symbol=%s AND owner=%s", (symbol, owner))
+        conn.commit()
+        # Recalculate allocations
+        cur.execute("SELECT SUM(amount) FROM portfolio WHERE owner=%s", (owner,))
+        total = cur.fetchone()[0] or 1
+        cur.execute("""
+            UPDATE portfolio SET allocation = ROUND((amount / %s * 100)::numeric, 1)
+            WHERE owner = %s
+        """, (total, owner))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Delete portfolio error: {e}")
+        return False
 
 # ── ALPHA VANTAGE ─────────────────────────────────────────
 def get_quote(symbol):
@@ -534,36 +613,17 @@ def add_investment():
     owner     = data.get("owner", "ledy")
     if not symbol or amount <= 0:
         return jsonify({"error": "Símbolo y monto requeridos"}), 400
-    portfolio = load_portfolio()
-    for p in portfolio:
-        if p["symbol"] == symbol and p.get("owner","ledy") == owner:
-            p["amount"]    = round(p["amount"] + amount, 2)
-            p["avg_price"] = avg_price if avg_price > 0 else p["avg_price"]
-            save_portfolio(portfolio)
-            return jsonify({"ok": True, "message": f"{symbol} actualizado"})
-    portfolio.append({"symbol":symbol,"name":name,"shares":0,"avg_price":avg_price,
-                       "amount":amount,"allocation":0,"owner":owner})
-    # Recalculate allocations per owner
-    for o in ["ledy","yorguin"]:
-        owner_p = [p for p in portfolio if p.get("owner","ledy")==o]
-        total = sum(p["amount"] for p in owner_p)
-        for p in owner_p:
-            p["allocation"] = round((p["amount"]/total)*100,1) if total>0 else 0
-    save_portfolio(portfolio)
-    return jsonify({"ok": True, "message": f"{symbol} agregado al portafolio de {owner.capitalize()}"})
+    ok = save_portfolio_item(symbol, name, amount, avg_price, owner)
+    if ok:
+        return jsonify({"ok": True, "message": f"{symbol} guardado en portafolio de {owner.capitalize()}"})
+    return jsonify({"error": "Error guardando en base de datos"}), 500
 
 @app.route("/api/portfolio/remove", methods=["POST"])
 def remove_investment():
     symbol = request.json.get("symbol","").upper()
     owner  = request.json.get("owner","ledy")
-    portfolio = [p for p in load_portfolio() if not(p["symbol"]==symbol and p.get("owner","ledy")==owner)]
-    for o in ["ledy","yorguin"]:
-        owner_p = [p for p in portfolio if p.get("owner","ledy")==o]
-        total = sum(p["amount"] for p in owner_p)
-        for p in owner_p:
-            p["allocation"] = round((p["amount"]/total)*100,1) if total>0 else 0
-    save_portfolio(portfolio)
-    return jsonify({"ok": True})
+    ok = delete_portfolio_item(symbol, owner)
+    return jsonify({"ok": ok})
 
 @app.route("/api/market-data")
 def market_data():
@@ -750,6 +810,7 @@ def trigger_analysis():
     return jsonify({"ok":True,"message":"Análisis iniciado, recibirás el email en unos minutos."})
 
 # ── SCHEDULER + INIT ──────────────────────────────────────
+init_portfolio_table()  # Create portfolio table if not exists
 scheduler = BackgroundScheduler(timezone="America/Bogota")
 # Apertura bolsa NY: 8:30am Colombia (9:30am ET)
 scheduler.add_job(scheduled_analysis, "cron", hour=8, minute=30, id="apex_open",
