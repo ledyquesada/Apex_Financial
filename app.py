@@ -464,9 +464,6 @@ Cada respuesta cruza TODAS las variables que pueden afectar el precio de una acc
 ## SUB-AGENTES
 **📈 Técnico** | **📰 Noticias Financieras** | **🌍 Noticias Globales** | **💼 Portafolio** | **🔍 Oportunidades** | **⚠️ Riesgo**
 
-## PORTAFOLIO DE LEDY ($350 USD en Hapi)
-QQQM 15% | VT 45% | GOOGL 15% | CVX 15% | IAU 10%
-
 ## FORMATO
 **🧠 Agentes Activados** | **📊 Datos Tiempo Real** | **🌍 Contexto Mundial** | **📰 Contexto Financiero**
 **📈 Análisis Técnico** | **🎯 Señal**: COMPRAR🟢/VENDER🔴/MANTENER🟡/ESPERAR⏳
@@ -478,13 +475,15 @@ def claude_chat(messages, market_context="", portfolio_context=""):
     if not ANTHROPIC_KEY:
         return "Error: ANTHROPIC_API_KEY no configurada."
     system = SYSTEM_PROMPT
+    if portfolio_context:
+        system += f"\n\n## PORTAFOLIO ACTUAL DEL USUARIO (DATOS REALES DE LA APP — usa SOLO estos, ignora cualquier otro portafolio)\n{portfolio_context}"
     if market_context:
-        system += f"\n\n## DATOS EN TIEMPO REAL\n{market_context}"
+        system += f"\n\n## DATOS DE MERCADO EN TIEMPO REAL\n{market_context}"
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"},
-            json={"model":"claude-opus-4-5","max_tokens":2000,"system":system,"messages":messages},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":2000,"system":system,"messages":messages},
             timeout=90,
         )
         data = r.json()
@@ -790,7 +789,7 @@ def translate_news():
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"},
-            json={"model":"claude-opus-4-5","max_tokens":800,"messages":[{"role":"user","content":prompt}]},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":800,"messages":[{"role":"user","content":prompt}]},
             timeout=30,
         )
         text = "".join(b["text"] for b in r.json().get("content",[]) if b["type"]=="text")
@@ -831,14 +830,12 @@ def trigger_analysis():
     return jsonify({"ok":True,"message":"Análisis iniciado, recibirás el email en unos minutos."})
 
 # ── SCHEDULER + INIT ──────────────────────────────────────
-scheduler = BackgroundScheduler(timezone="America/Bogota")
-# Apertura bolsa NY: 8:30am Colombia (9:30am ET)
-scheduler.add_job(scheduled_analysis, "cron", hour=8, minute=30, id="apex_open",
-                  kwargs={"moment": "apertura"})
-# Cierre bolsa NY: 3:00pm Colombia (4:00pm ET)
-scheduler.add_job(scheduled_analysis, "cron", hour=15, minute=0, id="apex_close",
-                  kwargs={"moment": "cierre"})
-scheduler.start()
+# Scheduler desactivado — email no configurado
+# Para reactivar: descomentar y configurar RESEND_API_KEY
+# scheduler = BackgroundScheduler(timezone="America/Bogota")
+# scheduler.add_job(scheduled_analysis, "cron", hour=8, minute=30, kwargs={"moment":"apertura"})
+# scheduler.add_job(scheduled_analysis, "cron", hour=15, minute=0, kwargs={"moment":"cierre"})
+# scheduler.start()
 init_db()
 
 if __name__ == "__main__":
